@@ -11,12 +11,17 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 # Set working directory
 WORKDIR /var/www/html
 
+# Copy composer files first
+COPY composer.json composer.lock ./
+
+# Install dependencies
+RUN composer install --no-dev --optimize-autoloader --no-scripts
+
 # Copy application files
 COPY . .
 
-# Create env if missing
-RUN if [ ! -f .env ]; then cp .env.example .env; fi
-
+# Now this will work
+RUN if [ ! -f .env ] && [ -f .env.example ]; then cp .env.example .env; fi
 # Create required Laravel directories
 RUN mkdir -p \
     storage/app \
@@ -27,8 +32,7 @@ RUN mkdir -p \
     storage/logs \
     bootstrap/cache
 
-# Install PHP dependencies
-RUN composer install --no-dev --optimize-autoloader
+
 
 # Permissions
 RUN chown -R www-data:www-data /var/www/html \
