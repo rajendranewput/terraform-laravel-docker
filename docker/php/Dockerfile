@@ -21,7 +21,7 @@ RUN composer install --no-dev --optimize-autoloader --no-scripts
 COPY . .
 
 # Now this will work
-RUN cp .env.example .env
+RUN cp .example.env .env
 # Create required Laravel directories
 RUN mkdir -p \
     storage/app \
