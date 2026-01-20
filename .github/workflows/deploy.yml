@@ -6,10 +6,6 @@ on:
       - main
   workflow_dispatch:
 
-env:
-  AWS_REGION: ${{ secrets.AWS_REGION }}
-  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -18,24 +14,26 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v4
+    - name: Copy files to EC2
+      uses: appleboy/scp-action@v0.1.7
       with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ secrets.AWS_REGION }}
-
-    - name: Login to Amazon ECR
-      id: login-ecr
-      uses: aws-actions/amazon-ecr-login@v2
-
-    - name: Build and push Docker image
-      run: |
-        docker build -t $ECR_REPOSITORY -f docker/php/Dockerfile .
-        docker tag $ECR_REPOSITORY:latest \
-          ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:latest
-        docker push \
-          ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:latest
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USER }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        port: ${{ secrets.EC2_SSH_PORT || 22 }}
+        source: "."
+        target: ${{ secrets.EC2_APP_DIR || '/opt/laravel-app' }}
+        strip_components: 0
+        exclude:
+          - ".git"
+          - ".github"
+          - "node_modules"
+          - "vendor"
+          - ".env"
+          - "storage/logs/*"
+          - "storage/framework/cache/*"
+          - "storage/framework/sessions/*"
+          - "storage/framework/views/*"
 
     - name: Deploy to EC2
       uses: appleboy/ssh-action@v1.0.3
@@ -43,32 +41,40 @@ jobs:
         host: ${{ secrets.EC2_HOST }}
         username: ${{ secrets.EC2_USER }}
         key: ${{ secrets.EC2_SSH_KEY }}
+        port: ${{ secrets.EC2_SSH_PORT || 22 }}
         script: |
           set -e
-
-          AWS_REGION=${{ secrets.AWS_REGION }}
-          REGISTRY=${{ steps.login-ecr.outputs.registry }}
-          IMAGE=${{ secrets.ECR_REPOSITORY }}
-
-          aws ecr get-login-password --region $AWS_REGION | \
-            docker login --username AWS --password-stdin $REGISTRY
-
-          docker pull $REGISTRY/$IMAGE:latest
-
-          docker stop laravel || true
-          docker rm laravel || true
-
-          docker run -d \
-            --name laravel \
-            -p 80:9000 \
-            --env APP_ENV=${{ secrets.APP_ENV }} \
-            --env DB_HOST=${{ secrets.DB_HOST }} \
-            --env DB_DATABASE=${{ secrets.DB_DATABASE }} \
-            --env DB_USERNAME=${{ secrets.DB_USERNAME }} \
-            --env DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
-            $REGISTRY/$IMAGE:latest
-
-          sleep 10
-
-          docker exec laravel php artisan config:clear
-          docker exec laravel php artisan migrate --force
+          
+          APP_DIR=${{ secrets.EC2_APP_DIR || '/opt/laravel-app' }}
+          cd $APP_DIR
+          
+          # Create .env from .example.env if it doesn't exist
+          if [ ! -f .env ]; then
+            cp .example.env .env
+          fi
+          
+          # Update database configuration in .env
+          sed -i "s|^DB_CONNECTION=.*|DB_CONNECTION=${{ secrets.DB_CONNECTION || 'mysql' }}|" .env
+          sed -i "s|^DB_HOST=.*|DB_HOST=${{ secrets.DB_HOST }}|" .env
+          sed -i "s|^DB_PORT=.*|DB_PORT=${{ secrets.DB_PORT || '3306' }}|" .env
+          sed -i "s|^DB_DATABASE=.*|DB_DATABASE=${{ secrets.DB_DATABASE }}|" .env
+          sed -i "s|^DB_USERNAME=.*|DB_USERNAME=${{ secrets.DB_USERNAME }}|" .env
+          sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=${{ secrets.DB_PASSWORD }}|" .env
+          
+          # Update app configuration
+          sed -i "s|^APP_ENV=.*|APP_ENV=${{ secrets.APP_ENV || 'production' }}|" .env
+          sed -i "s|^APP_DEBUG=.*|APP_DEBUG=${{ secrets.APP_DEBUG || 'true' }}|" .env
+          if [ -n "${{ secrets.APP_URL }}" ]; then
+            sed -i "s|^APP_URL=.*|APP_URL=${{ secrets.APP_URL }}|" .env
+          fi
+          
+          # Build and start containers
+          docker compose down || true
+          docker compose up -d --build
+          
+          # Wait for containers to be ready
+          sleep 15
+          
+          # Run Laravel commands inside the app container
+          docker compose exec -T app php artisan config:clear
+          docker compose exec -T app php artisan migrate --force
