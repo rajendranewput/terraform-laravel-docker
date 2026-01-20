@@ -44,10 +44,16 @@ jobs:
         username: ${{ secrets.EC2_USER }}
         key: ${{ secrets.EC2_SSH_KEY }}
         script: |
-          docker login -u AWS -p $(aws ecr get-login-password --region $AWS_REGION) \
-            ${{ steps.login-ecr.outputs.registry }}
+          set -e
 
-          docker pull ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:latest
+          AWS_REGION=${{ secrets.AWS_REGION }}
+          REGISTRY=${{ steps.login-ecr.outputs.registry }}
+          IMAGE=${{ secrets.ECR_REPOSITORY }}
+
+          aws ecr get-login-password --region $AWS_REGION | \
+            docker login --username AWS --password-stdin $REGISTRY
+
+          docker pull $REGISTRY/$IMAGE:latest
 
           docker stop laravel || true
           docker rm laravel || true
@@ -60,12 +66,9 @@ jobs:
             --env DB_DATABASE=${{ secrets.DB_DATABASE }} \
             --env DB_USERNAME=${{ secrets.DB_USERNAME }} \
             --env DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
+            $REGISTRY/$IMAGE:latest
 
-            ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:latest
-
-          # Give the container a moment to boot before running Artisan commands
           sleep 10
 
-          # Run Laravel maintenance commands inside the container
           docker exec laravel php artisan optimize:clear
           docker exec laravel php artisan migrate --force
