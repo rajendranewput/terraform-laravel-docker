@@ -62,3 +62,10 @@ jobs:
             --env DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
 
             ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:latest
+
+          # Give the container a moment to boot before running Artisan commands
+          sleep 10
+
+          # Run Laravel maintenance commands inside the container
+          docker exec laravel php artisan optimize:clear
+          docker exec laravel php artisan migrate --force
