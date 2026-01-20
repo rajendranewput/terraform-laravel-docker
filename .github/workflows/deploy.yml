@@ -24,16 +24,7 @@ jobs:
         source: "."
         target: ${{ secrets.EC2_APP_DIR || '/opt/laravel-app' }}
         strip_components: 0
-        exclude:
-          - ".git"
-          - ".github"
-          - "node_modules"
-          - "vendor"
-          - ".env"
-          - "storage/logs/*"
-          - "storage/framework/cache/*"
-          - "storage/framework/sessions/*"
-          - "storage/framework/views/*"
+       
 
     - name: Deploy to EC2
       uses: appleboy/ssh-action@v1.0.3
