@@ -8,13 +8,16 @@ RUN apt-get update && apt-get install -y \
 # Install Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
-WORKDIR /var/www
+# Set working directory
+WORKDIR /var/www/html
 
 # Copy application files
 COPY . .
 
-# Copy .example.env to .env if .env does not exist
-RUN if [ ! -f .env ]; then cp .example.env .env; fi
+# Create env if missing
+RUN if [ ! -f .env ]; then cp .env.example .env; fi
+
+# Create required Laravel directories
 RUN mkdir -p \
     storage/app \
     storage/app/public \
@@ -23,9 +26,10 @@ RUN mkdir -p \
     storage/framework/views \
     storage/logs \
     bootstrap/cache
+
 # Install PHP dependencies
 RUN composer install --no-dev --optimize-autoloader
 
 # Permissions
-RUN chown -R www-data:www-data /var/www \
+RUN chown -R www-data:www-data /var/www/html \
     && chmod -R 775 storage bootstrap/cache
