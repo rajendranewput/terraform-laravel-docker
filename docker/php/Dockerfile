@@ -21,7 +21,7 @@ RUN composer install --no-dev --optimize-autoloader --no-scripts
 COPY . .
 
 # Now this will work
-RUN if [ ! -f .env ] && [ -f .env.example ]; then cp .env.example .env; fi
+RUN cp .env.example .env
 # Create required Laravel directories
 RUN mkdir -p \
     storage/app \
@@ -31,7 +31,6 @@ RUN mkdir -p \
     storage/framework/views \
     storage/logs \
     bootstrap/cache
-
 
 
 # Permissions
