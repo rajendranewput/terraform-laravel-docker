@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 env:
   AWS_REGION: ${{ secrets.AWS_REGION }}
@@ -55,4 +56,9 @@ jobs:
             --name laravel \
             -p 80:9000 \
             --env APP_ENV=${{ secrets.APP_ENV }} \
+            --env DB_HOST=${{ secrets.DB_HOST }} \
+            --env DB_DATABASE=${{ secrets.DB_DATABASE }} \
+            --env DB_USERNAME=${{ secrets.DB_USERNAME }} \
+            --env DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
+
             ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:latest
