@@ -60,7 +60,7 @@ jobs:
 
           docker run -d \
             --name laravel \
-            -p 80:9000 \
+            -p 80:80 \
             --env APP_ENV=${{ secrets.APP_ENV }} \
             --env DB_HOST=${{ secrets.DB_HOST }} \
             --env DB_DATABASE=${{ secrets.DB_DATABASE }} \
