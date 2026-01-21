@@ -126,8 +126,8 @@ jobs:
 
           docker pull "$REGISTRY/$IMAGE:latest"
 
-          docker compose down || true
-          docker compose up -d
+          docker-compose down || true
+          docker-compose up -d
 
           sleep 10
           docker exec laravel_app php artisan config:clear
