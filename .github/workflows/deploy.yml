@@ -15,60 +15,74 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ secrets.AWS_REGION }}
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
-    - name: Login to Amazon ECR
-      id: login-ecr
-      uses: aws-actions/amazon-ecr-login@v2
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
-    - name: Build and push Docker image
-      run: |
-        docker build -t $ECR_REPOSITORY -f docker/php/Dockerfile .
-        docker tag $ECR_REPOSITORY:latest \
-          ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:latest
-        docker push \
-          ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:latest
+      - name: Build and push Docker image
+        run: |
+          docker build -t $ECR_REPOSITORY -f docker/php/Dockerfile .
+          docker tag $ECR_REPOSITORY:latest \
+            ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:latest
+          docker push \
+            ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:latest
 
-    - name: Deploy to EC2
-      uses: appleboy/ssh-action@v1.0.3
-      with:
-        host: ${{ secrets.EC2_HOST }}
-        username: ${{ secrets.EC2_USER }}
-        key: ${{ secrets.EC2_SSH_KEY }}
-        script: |
-          set -e
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
 
-          AWS_REGION=${{ secrets.AWS_REGION }}
-          REGISTRY=${{ steps.login-ecr.outputs.registry }}
-          IMAGE=${{ secrets.ECR_REPOSITORY }}
+            cd /var/www/html/laravel_app
 
-          aws ecr get-login-password --region $AWS_REGION | \
-            docker login --username AWS --password-stdin $REGISTRY
+            echo "Creating runtime env file..."
+            cat > .env.runtime <<EOF
+            APP_NAME=Laravel
+            APP_ENV=production
+            APP_KEY=${{ secrets.APP_KEY }}
+            APP_DEBUG=false
+            APP_URL=${{ secrets.APP_URL }}
 
-          docker pull $REGISTRY/$IMAGE:latest
+            DB_CONNECTION=mysql
+            DB_HOST=${{ secrets.DB_HOST }}
+            DB_PORT=3306
+            DB_DATABASE=${{ secrets.DB_DATABASE }}
+            DB_USERNAME=${{ secrets.DB_USERNAME }}
+            DB_PASSWORD=${{ secrets.DB_PASSWORD }}
 
-          docker stop laravel || true
-          docker rm laravel || true
+            CACHE_DRIVER=file
+            QUEUE_CONNECTION=sync
+            SESSION_DRIVER=file
+            EOF
 
-          docker run -d \
-            --name laravel \
-            -p 80:80 \
-            --env APP_ENV=${{ secrets.APP_ENV }} \
-            --env DB_HOST=${{ secrets.DB_HOST }} \
-            --env DB_DATABASE=${{ secrets.DB_DATABASE }} \
-            --env DB_USERNAME=${{ secrets.DB_USERNAME }} \
-            --env DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
-            $REGISTRY/$IMAGE:latest
+            REGISTRY=${{ steps.login-ecr.outputs.registry }}
+            IMAGE=${{ secrets.ECR_REPOSITORY }}
 
-          sleep 10
-          docker exec laravel php artisan key:generate
-          docker exec laravel php artisan config:clear
-          docker exec laravel php artisan migrate --force
+            echo "Logging into ECR..."
+            aws ecr get-login-password --region $AWS_REGION | \
+              docker login --username AWS --password-stdin $REGISTRY
+
+            echo "Pulling latest image..."
+            docker pull $REGISTRY/$IMAGE:latest
+
+            docker compose down
+            docker compose up -d
+            sleep 10
+
+            echo "Running Laravel commands..."
+            docker exec laravel php artisan key:generate --force || true
+            docker exec laravel php artisan config:clear
+            docker exec laravel php artisan migrate --force
