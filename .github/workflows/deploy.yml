@@ -52,9 +52,9 @@ jobs:
             cat > .env.runtime <<EOF
             APP_NAME=Laravel
             APP_ENV=production
-            APP_KEY=${{ secrets.APP_KEY }}
+            APP_KEY=base64:1L2UsHPbKlEZpjZZB2wV4jGuIEsExja+exUmOYHQlgY=
             APP_DEBUG=false
-            APP_URL=${{ secrets.APP_URL }}
+            APP_URL=http://13.201.31.170
 
             DB_CONNECTION=mysql
             DB_HOST=${{ secrets.DB_HOST }}
