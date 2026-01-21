@@ -4,6 +4,10 @@ services:
   app:
     image: ${REGISTRY}/${IMAGE}:latest
     container_name: laravel_app
+    env_file:
+      - .env
+    expose:
+      - "9000"
     restart: always
     networks:
       - laravel
@@ -15,7 +19,7 @@ services:
     ports:
       - "80:80"
     volumes:
-      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf
     depends_on:
       - app
     networks:
