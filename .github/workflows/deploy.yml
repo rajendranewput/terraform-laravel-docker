@@ -46,7 +46,7 @@ jobs:
           script: |
             set -e
 
-            cd /var/www/html/laravel_app
+            cd /var/www/html
 
             echo "Creating runtime env file..."
             cat > .env.runtime <<EOF
