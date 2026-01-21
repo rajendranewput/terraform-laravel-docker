@@ -126,8 +126,18 @@ jobs:
 
           docker pull "$REGISTRY/$IMAGE:latest"
 
-          docker-compose down || true
-          docker-compose up -d
+           # Prefer modern Docker Compose plugin ("docker compose"). Fallback to legacy "docker-compose" if installed.
+           if docker compose version >/dev/null 2>&1; then
+             COMPOSE="docker compose"
+           elif command -v docker-compose >/dev/null 2>&1; then
+             COMPOSE="docker-compose"
+           else
+             echo "ERROR: Docker Compose not found. Install docker compose plugin or docker-compose." >&2
+             exit 1
+           fi
+
+           $COMPOSE down || true
+           $COMPOSE up -d
 
           sleep 10
           docker exec laravel_app php artisan config:clear
