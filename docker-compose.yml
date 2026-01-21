@@ -5,8 +5,6 @@ services:
     image: ${REGISTRY}/${IMAGE}:latest
     container_name: laravel_app
     restart: always
-    env_file:
-      - .env.runtime
     networks:
       - laravel
 
