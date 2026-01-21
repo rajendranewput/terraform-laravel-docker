@@ -37,42 +37,98 @@ jobs:
         docker push \
           ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:latest
 
+    - name: Copy docker-compose.yml to EC2
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USER }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        port: ${{ secrets.EC2_SSH_PORT || 22 }}
+        source: "docker-compose.yml"
+        target: ${{ secrets.EC2_APP_DIR || '/opt/laravel-app' }}
+
+    - name: Copy nginx config to EC2
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USER }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        port: ${{ secrets.EC2_SSH_PORT || 22 }}
+        source: "docker/nginx/default.conf"
+        target: ${{ secrets.EC2_APP_DIR || '/opt/laravel-app' }}/docker/nginx/
+
+    - name: Copy Laravel public/ to EC2 (for nginx)
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USER }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        port: ${{ secrets.EC2_SSH_PORT || 22 }}
+        source: "public"
+        target: ${{ secrets.EC2_APP_DIR || '/opt/laravel-app' }}
+
+    - name: Copy .example.env to EC2
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USER }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        port: ${{ secrets.EC2_SSH_PORT || 22 }}
+        source: ".example.env"
+        target: ${{ secrets.EC2_APP_DIR || '/opt/laravel-app' }}
+
     - name: Deploy to EC2
       uses: appleboy/ssh-action@v1.0.3
       with:
         host: ${{ secrets.EC2_HOST }}
         username: ${{ secrets.EC2_USER }}
         key: ${{ secrets.EC2_SSH_KEY }}
+        port: ${{ secrets.EC2_SSH_PORT || 22 }}
         script: |
-          
           set -e
 
-          AWS_REGION=${{ secrets.AWS_REGION }}
-          REGISTRY=${{ steps.login-ecr.outputs.registry }}
-          IMAGE=${{ secrets.ECR_REPOSITORY }}
+          APP_DIR="${{ secrets.EC2_APP_DIR }}"
+          if [ -z "$APP_DIR" ]; then APP_DIR="/opt/laravel-app"; fi
 
-          aws ecr get-login-password --region $AWS_REGION | \
-            docker login --username AWS --password-stdin $REGISTRY
+          mkdir -p "$APP_DIR/docker/nginx"
+          cd "$APP_DIR"
 
-          docker pull $REGISTRY/$IMAGE:latest
+          # Create .env from .example.env if missing, then set DB details
+          if [ ! -f .env ]; then
+            cp .example.env .env
+          fi
 
-          docker stop laravel || true
-          docker rm laravel || true
+          set_kv () {
+            key="$1"
+            value="$2"
+            if grep -q "^${key}=" .env; then
+              sed -i -E "s|^${key}=.*$|${key}=${value}|g" .env
+            else
+              printf "\n%s=%s\n" "$key" "$value" >> .env
+            fi
+          }
 
-          docker run -d \
-            --name laravel \
-            -p 80:80 \
-            --env APP_ENV=${{ secrets.APP_ENV }} \
-            --env APP_KEY=base64:1L2UsHPbKlEZpjZZB2wV4jGuIEsExja+exUmOYHQlgY= \
-            --env APP_DEBUG=false \
-            --env APP_URL=http://13.201.31.170 \
-            --env DB_HOST=${{ secrets.DB_HOST }} \
-            --env DB_DATABASE=${{ secrets.DB_DATABASE }} \
-            --env DB_USERNAME=${{ secrets.DB_USERNAME }} \
-            --env DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
-            $REGISTRY/$IMAGE:latest
+          set_kv "APP_ENV" "${{ secrets.APP_ENV }}"
+          set_kv "APP_DEBUG" "${{ secrets.APP_DEBUG }}"
+          set_kv "APP_URL" "${{ secrets.APP_URL }}"
+          set_kv "DB_HOST" "${{ secrets.DB_HOST }}"
+          set_kv "DB_DATABASE" "${{ secrets.DB_DATABASE }}"
+          set_kv "DB_USERNAME" "${{ secrets.DB_USERNAME }}"
+          set_kv "DB_PASSWORD" "${{ secrets.DB_PASSWORD }}"
+
+          AWS_REGION="${{ secrets.AWS_REGION }}"
+          REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+          IMAGE="${{ secrets.ECR_REPOSITORY }}"
+          export REGISTRY IMAGE
+
+          aws ecr get-login-password --region "$AWS_REGION" | \
+            docker login --username AWS --password-stdin "$REGISTRY"
+
+          docker pull "$REGISTRY/$IMAGE:latest"
+
+          docker compose down || true
+          docker compose up -d
 
           sleep 10
-          docker exec laravel php artisan key:generate
-          docker exec laravel php artisan config:clear
-          docker exec laravel php artisan migrate --force
+          docker exec laravel_app php artisan config:clear
+          docker exec laravel_app php artisan migrate --force
