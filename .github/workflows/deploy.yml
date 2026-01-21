@@ -47,15 +47,15 @@ jobs:
         source: "docker-compose.yml"
         target: ${{ secrets.EC2_APP_DIR || '/home/ec2-user/app' }}
 
-    - name: Copy nginx config to EC2
+    - name: Copy nginx config directory to EC2
       uses: appleboy/scp-action@v0.1.7
       with:
         host: ${{ secrets.EC2_HOST }}
         username: ${{ secrets.EC2_USER }}
         key: ${{ secrets.EC2_SSH_KEY }}
         port: ${{ secrets.EC2_SSH_PORT || 22 }}
-        source: "docker/nginx/default.conf"
-        target: ${{ secrets.EC2_APP_DIR || '/home/ec2-user/app' }}/docker/nginx/
+        source: "docker/nginx"
+        target: ${{ secrets.EC2_APP_DIR || '/home/ec2-user/app' }}/docker/
 
     - name: Copy Laravel public/ to EC2 (for nginx)
       uses: appleboy/scp-action@v0.1.7
@@ -92,6 +92,16 @@ jobs:
 
           mkdir -p "$APP_DIR/docker/nginx"
           cd "$APP_DIR"
+
+          # Fix common SCP path mishaps where default.conf becomes a directory or ends up nested
+          if [ -d docker/nginx/default.conf ]; then
+            rm -rf docker/nginx/default.conf
+          fi
+          if [ -f docker/nginx/docker/nginx/default.conf ] && [ ! -f docker/nginx/default.conf ]; then
+            mkdir -p docker/nginx
+            mv docker/nginx/docker/nginx/default.conf docker/nginx/default.conf
+            rm -rf docker/nginx/docker
+          fi
 
           # Create .env from .example.env if missing, then set DB details
           if [ ! -f .env ]; then
