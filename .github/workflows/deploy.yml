@@ -37,28 +37,54 @@ jobs:
           docker push \
             ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:latest
 
+      - name: Copy deployment files to EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: ${{ secrets.EC2_SSH_PORT || 22 }}
+          source: "docker-compose.yml"
+          target: ${{ secrets.EC2_APP_DIR || '/var/www/html' }}
+
+      - name: Copy nginx config to EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: ${{ secrets.EC2_SSH_PORT || 22 }}
+          source: "docker/nginx/default.conf"
+          target: ${{ secrets.EC2_APP_DIR || '/var/www/html' }}/docker/nginx/
+
       - name: Deploy to EC2
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
+          port: ${{ secrets.EC2_SSH_PORT || 22 }}
           script: |
             set -e
 
-            cd /var/www/html
+            APP_DIR="${{ secrets.EC2_APP_DIR }}"
+            if [ -z "$APP_DIR" ]; then APP_DIR="/var/www/html"; fi
+
+            # Create directory if it doesn't exist
+            mkdir -p "$APP_DIR/docker/nginx"
+            cd "$APP_DIR"
 
             echo "Creating runtime env file..."
             cat > .env.runtime <<EOF
             APP_NAME=Laravel
-            APP_ENV=production
+            APP_ENV=${{ secrets.APP_ENV || 'production' }}
             APP_KEY=base64:1L2UsHPbKlEZpjZZB2wV4jGuIEsExja+exUmOYHQlgY=
-            APP_DEBUG=false
-            APP_URL=http://13.201.31.170
+            APP_DEBUG=${{ secrets.APP_DEBUG || 'false' }}
+            APP_URL=${{ secrets.APP_URL || 'http://13.201.31.170' }}
 
             DB_CONNECTION=mysql
             DB_HOST=${{ secrets.DB_HOST }}
-            DB_PORT=3306
+            DB_PORT=${{ secrets.DB_PORT || '3306' }}
             DB_DATABASE=${{ secrets.DB_DATABASE }}
             DB_USERNAME=${{ secrets.DB_USERNAME }}
             DB_PASSWORD=${{ secrets.DB_PASSWORD }}
@@ -70,6 +96,7 @@ jobs:
 
             REGISTRY=${{ steps.login-ecr.outputs.registry }}
             IMAGE=${{ secrets.ECR_REPOSITORY }}
+            export REGISTRY IMAGE
 
             echo "Logging into ECR..."
             aws ecr get-login-password --region $AWS_REGION | \
@@ -78,11 +105,14 @@ jobs:
             echo "Pulling latest image..."
             docker pull $REGISTRY/$IMAGE:latest
 
-            docker compose down
+            echo "Stopping existing containers..."
+            docker compose down || true
+
+            echo "Starting containers..."
             docker compose up -d
-            sleep 10
+            sleep 15
 
             echo "Running Laravel commands..."
-            docker exec laravel php artisan key:generate --force || true
-            docker exec laravel php artisan config:clear
-            docker exec laravel php artisan migrate --force
+            docker exec laravel_app php artisan key:generate --force || true
+            docker exec laravel_app php artisan config:clear
+            docker exec laravel_app php artisan migrate --force
